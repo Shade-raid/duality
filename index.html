@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duality: A Horror Text Adventure</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inconsolata&display=swap');
+
+    body {
+      margin: 0; padding: 0;
+      height: 100vh;
+      background-color: #0b0b0b;
+      color: #00ff00;
+      font-family: 'Inconsolata', monospace;
+      display: flex;
+      overflow: hidden;
+      user-select: none;
+    }
+    #ascii-window {
+      width: 60%;
+      border-right: 2px solid #00ff00;
+      background: #040404;
+      padding: 1rem;
+      box-sizing: border-box;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+    }
+    #text-window {
+      white-space: pre-wrap;
+      flex-grow: 1;
+      font-size: 1.15rem;
+      line-height: 1.4;
+      margin-bottom: 1rem;
+    }
+    #choices {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .choice-btn {
+      background: transparent;
+      border: 1px solid #00ff00;
+      color: #00ff00;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background-color 0.2s;
+    }
+    .choice-btn:hover:not(:disabled) {
+      background-color: #004400;
+    }
+    .choice-btn:disabled {
+      color: #004400;
+      border-color: #004400;
+      cursor: default;
+    }
+
+    #ui {
+      width: 40%;
+      padding: 1rem;
+      box-sizing: border-box;
+      background-color: #000;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      overflow-y: auto;
+    }
+    #persona-name {
+      font-weight: bold;
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+      color: #66ff66;
+    }
+    #meter-container {
+      background: #003300;
+      border: 1px solid #00ff00;
+      height: 15px;
+      width: 100%;
+      position: relative;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    #meter-fill {
+      background: #33ff33;
+      height: 100%;
+      width: 50%;
+      transition: width 0.3s ease;
+    }
+    h4 {
+      margin: 0 0 0.25rem 0;
+      border-bottom: 1px solid #00ff00;
+      padding-bottom: 0.25rem;
+      user-select: none;
+    }
+    ul {
+      list-style: none;
+      padding-left: 0;
+      margin-top: 0;
+      max-height: 120px;
+      overflow-y: auto;
+      border: 1px solid #00ff00;
+      border-radius: 3px;
+      background: #010101;
+    }
+    li {
+      padding: 0.25rem 0.5rem;
+      border-bottom: 1px solid #003300;
+      font-size: 0.95rem;
+    }
+    li:last-child {
+      border-bottom: none;
+    }
+    #objective {
+      font-style: italic;
+      font-size: 0.9rem;
+      color: #00cc00;
+      border: 1px dashed #00ff00;
+      padding: 0.5rem;
+      min-height: 50px;
+      user-select: none;
+    }
+    #language-switch {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .lang-btn {
+      flex: 1;
+      padding: 0.4rem 0;
+      background: transparent;
+      border: 1px solid #00ff00;
+      color: #00ff00;
+      cursor: pointer;
+      font-size: 1rem;
+      user-select: none;
+      transition: background-color 0.2s;
+      border-radius: 3px;
+    }
+    .lang-btn:hover {
+      background-color: #004400;
+    }
+    .lang-btn.active {
+      background-color: #00ff00;
+      color: #000;
+      cursor: default;
+    }
+  </style>
+</head>
+<body>
+  <div id="ascii-window">
+    <pre id="text-window" aria-live="polite" aria-atomic="true"></pre>
+    <div id="choices" role="list"></div>
+  </div>
+
+  <aside id="ui" aria-label="Game user interface">
+    <section>
+      <h4 data-i18n="persona">Persona</h4>
+      <div id="persona-name" aria-live="polite"></div>
+    </section>
+    <section>
+      <h4 data-i18n="mentalState">Mental State</h4>
+      <div id="meter-container" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+        <div id="meter-fill"></div>
+      </div>
+    </section>
+    <section>
+      <h4 data-i18n="inventory">Inventory</h4>
+      <ul id="inventory-list" aria-live="polite" aria-label="Player inventory"></ul>
+    </section>
+    <section>
+      <h4 data-i18n="journal">Journal</h4>
+      <ul id="journal-list" aria-live="polite" aria-label="Journal entries"></ul>
+    </section>
+    <section>
+      <h4 data-i18n="objective">Current Objective</h4>
+      <div id="objective" aria-live="polite"></div>
+    </section>
+    <section>
+      <h4 data-i18n="language">Language</h4>
+      <div id="language-switch">
+        <button class="lang-btn" id="lang-en">English</button>
+        <button class="lang-btn" id="lang-et">Eesti</button>
+      </div>
+    </section>
+  </aside>
+
+<script>
+  // Language and translations
+  let language = 'en';
+
+  const translations = {
+    en: {
+      switchPersona: 'Switch Persona',
+      inventory: 'Inventory',
+      journal: 'Journal',
+      persona: 'Persona',
+      mentalState: 'Mental State',
+      language: 'Language',
+      objective: 'Current Objective',
+      restart: 'Restart?',
+      actions: {
+        meditate: 'Meditate peacefully',
+        exploreForest: 'Explore the forest',
+        enterTown: 'Approach town',
+        runTunnel: 'Run through tunnel',
+        riskShortcut: 'Take risky shortcut',
+        jumpCliff: 'Try to jump across',
+        climbDown: 'Climb down carefully',
+        openChest: 'Open the chest',
+        readNote: 'Read the note',
+        wait: 'Wait and observe',
+        runAway: 'Run away',
+        listen: 'Listen carefully',
+      },
+      personas: {
+        calm: 'Calm',
+        impulsive: 'Impulsive',
+        fearful: 'Fearful',
+        rational: 'Rational'
+      },
+      endings: {
+        peaceful: 'You find peace in the shadows...',
+        lost: 'Lost in the dark forever...',
+        haunted: 'Haunted by the voices you never escaped...',
+        secret: 'You unlocked a secret ending...'
+      }
+    },
+    et: {
+      switchPersona: 'Vaheta isiksust',
+      inventory: 'Inventar',
+      journal: 'Päevik',
+      persona: 'Isiksus',
+      mentalState: 'Vaimne seisund',
+      language: 'Keel',
+      objective: 'Praegune eesmärk',
+      restart: 'Alusta uuesti?',
+      actions: {
+        meditate: 'Mediteeri rahulikult',
+        exploreForest: 'Uuri metsa',
+        enterTown: 'Mine linna poole',
+        runTunnel: 'Jookse läbi tunneli',
+        riskShortcut: 'Võta riskantne otsetee',
+        jumpCliff: 'Proovi hüpata üle',
+        climbDown: 'Ronida ettevaatlikult alla',
+        openChest: 'Ava kirst',
+        readNote: 'Loe märkust',
+        wait: 'Oota ja vaata',
+        runAway: 'Põgene',
+        listen: 'Kuula hoolikalt',
+      },
+      personas: {
+        calm: 'Rahulik',
+        impulsive: 'Impulsiivne',
+        fearful: 'Hirmul',
+        rational: 'Ratsionaalne'
+      },
+      endings: {
+        peaceful: 'Leidsid varjudes rahu...',
+        lost: 'Kadunud igaveseks pimeduses...',
+        haunted: 'Vaevatud häälte poolt, kust sa kunagi ei pääsenud...',
+        secret: 'Avastasid saladusliku lõpu...'
+      }
+    }
+  };
+
+  // Game state
+  const state = {
+    currentScene: 'start',
+    mentalState: 50, // 0-100 scale, 0 = insane, 100 = calm
+    persona: 'calm',
+    inventory: [],
+    journal: [],
+    objective: '',
+  };
+
+  // Personas info for flavor text, can expand later
+  const personas = {
+    calm: {
+      name: () => translations[language].personas.calm,
+      desc: 'You keep a steady mind in this madness.',
+    },
+    impulsive: {
+      name: () => translations[language].personas.impulsive,
+      desc: 'Your actions are sudden and rash, sometimes reckless.',
+    },
+    fearful: {
+      name: () => translations[language].personas.fearful,
+      desc: 'Fear controls you, making you cautious or frozen.',
+    },
+    rational: {
+      name: () => translations[language].personas.rational,
+      desc: 'You analyze and plan carefully, even under stress.',
+    },
+  };
+
+  // Scene definitions - expanded with horror elements and choices
+  const scenes = {
+    start: {
+      text: {
+        en: `You wake up in a dark, dense forest. Mist coils around the gnarled trees, and distant howls echo through the cold air.\nWhat do you do?`,
+        et: `Sa ärkad tumedas, tihedas metsas. Udus keerlevad sõlmekad puud ning kauged ulgumised kajavad külmas õhus.\nMida sa teed?`,
+      },
+      objective: {
+        en: 'Decide how to survive this place.',
+        et: 'Otsusta, kuidas siin ellu jääda.',
+      },
+      choices: [
+        { key: 'meditate', nextScene: 'meditate' },
+        { key: 'exploreForest', nextScene: 'exploreForest' },
+        { key: 'enterTown', nextScene: 'enterTown' },
+      ],
+    },
+    meditate: {
+      text: {
+        en: `You sit down and focus on your breathing. The whispers of the forest seem to slow.\nYour mind clears slightly.`,
+        et: `Sa istud maha ja keskendud hingamisele. Metsa sosinad näivad vaibuvat.\nSinu meel muutub veidi selgemaks.`,
+      },
+      objective: {
+        en: 'Try to calm your nerves.',
+        et: 'Püüa närve rahustada.',
+      },
+      mentalChange: +10,
+      choices: [
+        { key: 'exploreForest', nextScene: 'exploreForest' },
+        { key: 'enterTown', nextScene: 'enterTown' },
+      ],
+    },
+    exploreForest: {
+      text: {
+        en: `The forest is thick, shadows twist unnaturally.\nYou find an old, weathered chest half-buried among the roots.`,
+        et: `Mets on tihe, varjud keerlevad ebaloomulikult.\nLeiad vana, kulunud kirstu juurte seast poolenisti maetud.`,
+      },
+      objective: {
+        en: 'Decide whether to open the chest.',
+        et: 'Otsusta, kas avada kirst.',
+      },
+      choices: [
+        { key: 'openChest', nextScene: 'openChest' },
+        { key: 'runAway', nextScene: 'runAway' },
+      ],
+    },
+    openChest: {
+      text: {
+        en: `You pry open the chest carefully. Inside, a faded note and a rusty key lie within.`,
+        et: `Sa avad kirstu ettevaatlikult. Selles on tuhmunud märk ja roostes võti.`,
+      },
+      objective: {
+        en: 'Take the note and key?',
+        et: 'Võta märk ja võti?',
+      },
+      choices: [
+        { key: 'readNote', nextScene: 'readNote' },
+        { key: 'runAway', nextScene: 'runAway' },
+      ],
+      addInventory: ['rusty key', 'faded note'],
+    },
+    readNote: {
+      text: {
+        en: `"Beware the shadows beneath the town. They hunger for souls."\nA chill runs down your spine.`,
+        et: `"Hoiatus linna varjudest. Nad ihkavad hingesid."\nSinu selg väriseb külmast.`,
+      },
+      objective: {
+        en: 'Consider your next move carefully.',
+        et: 'Mõtle hoolikalt oma järgmisele sammule.',
+      },
+      mentalChange: -10,
+      choices: [
+        { key: 'enterTown', nextScene: 'enterTown' },
+        { key: 'runAway', nextScene: 'runAway' },
+      ],
+      addJournal: ['Read warning note from the chest.'],
+    },
+    runAway: {
+      text: {
+        en: `You decide the forest is too dangerous and run back into the darkness, lost and alone...`,
+        et: `Sa otsustad, et mets on liiga ohtlik ja jooksed tagasi pimedusse, kadununa ja üksi...`,
+      },
+      objective: {
+        en: 'Game over.',
+        et: 'Mäng läbi.',
+      },
+      end: true,
+      endingType: 'lost',
+    },
+    enterTown: {
+      text: {
+        en: `You arrive at an abandoned town cloaked in fog. Doors creak, and distant footsteps echo.\nWhat do you do?`,
+        et: `Sa jõuad mahajäetud linna, mis on udus mähitud. Uksed krigisevad ja kauged sammud kajavad.\nMida sa teed?`,
+      },
+      objective: {
+        en: 'Explore or find shelter?',
+        et: 'Uuri või leia peavari?',
+      },
+      choices: [
+        { key: 'listen', nextScene: 'listen' },
+        { key: 'runTunnel', nextScene: 'runTunnel' },
+      ],
+    },
+    listen: {
+      text: {
+        en: `You pause and listen carefully. Something whispers your name from the shadows.\nDo you follow the voice?`,
+        et: `Sa peatud ja kuuled hoolikalt. Midagi sosistab sinu nime varjudest.\nKas järgid häält?`,
+      },
+      objective: {
+        en: 'Follow or ignore?',
+        et: 'Järgi või ignoreeri?',
+      },
+      choices: [
+        { key: 'riskShortcut', nextScene: 'riskShortcut' },
+        { key: 'wait', nextScene: 'wait' },
+      ],
+    },
+    riskShortcut: {
+      text: {
+        en: `You take the shortcut through a narrow, dark alley. Suddenly, cold hands grab your arm...`,
+        et: `Sa võtad otsetee kitsast, pimedast alleest. Äkki haaravad külmad käed su käest...`,
+      },
+      objective: {
+        en: 'Try to break free?',
+        et: 'Proovi lahti saada?',
+      },
+      choices: [
+        { key: 'jumpCliff', nextScene: 'jumpCliff' },
+        { key: 'runAway', nextScene: 'runAway' },
+      ],
+      mentalChange: -20,
+    },
+    wait: {
+      text: {
+        en: `You decide to wait, heart pounding. The whisper fades, and silence returns.\nMaybe it was just your mind.`,
+        et: `Sa otsustad oodata, süda tuksub kiiresti. Sosin vaibub ja vaikust tuleb.\nVõib-olla oli see lihtsalt su meel.`,
+      },
+      objective: {
+        en: 'Gather courage to explore further.',
+        et: 'Kogu julgus, et edasi uurida.',
+      },
+      mentalChange: +5,
+      choices: [
+        { key: 'runTunnel', nextScene: 'runTunnel' },
+      ],
+    },
+    jumpCliff: {
+      text: {
+        en: `You leap desperately over a cliff edge into a dark ravine. You land hard but escape the grasp.\nYou feel shaken but alive.`,
+        et: `Sa hüppad meeleheitlikult kaljult pimedasse orusse. Sa maandud kõvasti, kuid põgened haardest.\nSa tunned end raputatuna, kuid elusana.`,
+      },
+      objective: {
+        en: 'Find shelter quickly.',
+        et: 'Leia kiiresti peavari.',
+      },
+      mentalChange: -10,
+      choices: [
+        { key: 'climbDown', nextScene: 'climbDown' },
+      ],
+    },
+    climbDown: {
+      text: {
+        en: `You carefully climb down into the ravine, hearing distant cries. An old wooden door stands ajar nearby.`,
+        et: `Sa ronid ettevaatlikult oru põhja, kuulates kaugeid karjeid. Läheduses on vana puidust uks, mis on poolenisti lahti.`,
+      },
+      objective: {
+        en: 'Enter the door or explore more?',
+        et: 'Mine ukse kaudu või uurige veel?',
+      },
+      choices: [
+        { key: 'enterDoor', nextScene: 'enterDoor' },
+        { key: 'exploreForest', nextScene: 'exploreForest' },
+      ],
+    },
+    enterDoor: {
+      text: {
+        en: `Inside is a dimly lit cellar, filled with strange symbols and bones.\nA voice speaks from the shadows: "Welcome, traveler..."`,
+        et: `Sees on vaevu valgustatud keldriruum, täis kummalisi sümboleid ja luid.\nVarjudest kostab hääl: "Tere tulemast, rändur..."`,
+      },
+      objective: {
+        en: 'What do you say?',
+        et: 'Mida sa ütled?',
+      },
+      choices: [
+        { key: 'speak', nextScene: 'speak' },
+        { key: 'runAway', nextScene: 'runAway' },
+      ],
+    },
+    speak: {
+      text: {
+        en: `You answer cautiously. The voice laughs eerily and offers you a choice:\nJoin the shadows or resist forever.`,
+        et: `Sa vastad ettevaatlikult. Hääl naerab kõhedalt ja pakub sulle valikut:\nLiitu varjudega või võitle igavesti.`,
+      },
+      objective: {
+        en: 'Choose your fate.',
+        et: 'Vali oma saatus.',
+      },
+      choices: [
+        { key: 'joinShadows', nextScene: 'endingSecret' },
+        { key: 'resist', nextScene: 'endingHaunted' },
+      ],
+    },
+    endingPeaceful: {
+      text: {
+        en: `You find peace in the shadows, your mind finally still. The forest no longer frightens you.`,
+        et: `Sa leidsid varjudes rahu, su meel on lõpuks rahulik. Mets ei hirmuta sind enam.`,
+      },
+      end: true,
+      endingType: 'peaceful',
+    },
+    endingLost: {
+      text: {
+        en: `Lost in the dark forever, your cries go unheard.`,
+        et: `Kadunud igaveseks pimeduses, su karjed jäävad kuulmata.`,
+      },
+      end: true,
+      endingType: 'lost',
+    },
+    endingHaunted: {
+      text: {
+        en: `Haunted by the voices you never escaped, your soul roams endlessly.`,
+        et: `Vaevatud häälte poolt, kust sa kunagi ei pääsenud, su hing rändab lõputult.`,
+      },
+      end: true,
+      endingType: 'haunted',
+    },
+    endingSecret: {
+      text: {
+        en: `You join the shadows and gain knowledge beyond mortal grasp, but at a terrible cost.`,
+        et: `Sa liitud varjudega ja saad teadmisi, mis on surematu jaoks liiga suured, kuid kohutava hinnaga.`,
+      },
+      end: true,
+      endingType: 'secret',
+    },
+  };
+
+  // UI elements setup
+  function setupUI() {
+    const container = document.getElementById('game-container');
+
+    container.innerHTML = `
+      <div id="language-select">
+        <label for="lang">${translations[language].ui.language}:</label>
+        <select id="lang">
+          <option value="en">English</option>
+          <option value="et">Eesti</option>
+        </select>
+      </div>
+
+      <div id="status-bar">
+        <div id="mental-state">${translations[language].ui.mentalState}: ${gameState.mentalState}</div>
+        <div id="persona">${translations[language].ui.persona}: ${personas[gameState.persona].name()}</div>
+      </div>
+
+      <div id="scene-text"></div>
+      <div id="objective-text"></div>
+      <div id="choices"></div>
+      <div id="inventory"></div>
+      <div id="journal"></div>
+    `;
+
+    document.getElementById('lang').value = language;
+    document.getElementById('lang').addEventListener('change', (e) => {
+      language = e.target.value;
+      renderScene(gameState.currentScene);
+    });
+  }
+
+  // Render current scene UI
+  function renderScene(sceneKey) {
+    const scene = scenes[sceneKey];
+    if (!scene) return;
+
+    gameState.currentScene = sceneKey;
+    if (scene.mentalChange !== undefined) {
+      gameState.mentalState = Math.min(100, Math.max(0, gameState.mentalState + scene.mentalChange));
+      updatePersona();
+    }
+
+    // Add inventory if applicable
+    if (scene.addInventory) {
+      scene.addInventory.forEach(item => {
+        if (!gameState.inventory.includes(item)) {
+          gameState.inventory.push(item);
+        }
+      });
+    }
+
+    // Add journal entries if applicable
+    if (scene.addJournal) {
+      scene.addJournal.forEach(entry => {
+        if (!gameState.journal.includes(entry)) {
+          gameState.journal.push(entry);
+        }
+      });
+    }
+
+    // Update UI texts
+    document.getElementById('mental-state').textContent = `${translations[language].ui.mentalState}: ${gameState.mentalState}`;
+    document.getElementById('persona').textContent = `${translations[language].ui.persona}: ${personas[gameState.persona].name()}`;
+
+    document.getElementById('scene-text').textContent = scene.text[language];
+    document.getElementById('objective-text').textContent = scene.objective[language];
+
+    // Clear previous choices
+    const choicesContainer = document.getElementById('choices');
+    choicesContainer.innerHTML = '';
+
+    if (scene.end) {
+      const endingText = document.createElement('div');
+      endingText.textContent = scene.text[language];
+      endingText.style.fontWeight = 'bold';
+      choicesContainer.appendChild(endingText);
+
+      // Add restart button
+      const restartBtn = document.createElement('button');
+      restartBtn.textContent = translations[language].ui.restart;
+      restartBtn.addEventListener('click', () => {
+        resetGame();
+      });
+      choicesContainer.appendChild(restartBtn);
+      return;
+    }
+
+    // Create buttons for choices
+    scene.choices.forEach(choice => {
+      const btn = document.createElement('button');
+      btn.textContent = translations[language].choices[choice.key];
+      btn.addEventListener('click', () => {
+        renderScene(choice.nextScene);
+      });
+      choicesContainer.appendChild(btn);
+    });
+
+    // Update inventory display
+    const inventoryContainer = document.getElementById('inventory');
+    inventoryContainer.textContent = translations[language].ui.inventory + ': ' + (gameState.inventory.length ? gameState.inventory.join(', ') : translations[language].ui.empty);
+
+    // Update journal display
+    const journalContainer = document.getElementById('journal');
+    journalContainer.textContent = translations[language].ui.journal + ': ' + (gameState.journal.length ? gameState.journal.join('; ') : translations[language].ui.empty);
+  }
+
+  // Update persona based on mental state
+  function updatePersona() {
+    if (gameState.mentalState >= 75) {
+      gameState.persona = 'calm';
+    } else if (gameState.mentalState >= 50) {
+      gameState.persona = 'rational';
+    } else if (gameState.mentalState >= 25) {
+      gameState.persona = 'fearful';
+    } else {
+      gameState.persona = 'impulsive';
+    }
+  }
+
+  // Reset game state
+  function resetGame() {
+    gameState.currentScene = 'start';
+    gameState.mentalState = 50;
+    gameState.persona = 'calm';
+    gameState.inventory = [];
+    gameState.journal = [];
+    renderScene(gameState.currentScene);
+  }
+
+  // Initialize
+  setupUI();
+  resetGame();
+})();
+</script>
+</body>
+</html>
